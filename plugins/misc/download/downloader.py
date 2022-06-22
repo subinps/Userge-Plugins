@@ -84,6 +84,7 @@ async def url_download(message: Message, url: str) -> Tuple[str, int]:
         usern = parsed.username
         passw = parsed.password
         url = parsed._replace(netloc=f"{parsed.hostname}").geturl()
+        url = url.strip()
     dl_loc = os.path.join(config.Dynamic.DOWN_PATH, custom_file_name)
     downloader = SmartDL(url, dl_loc, progress_bar=False)
     downloader.add_basic_authentication(username=usern, password=passw)
