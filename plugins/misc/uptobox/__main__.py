@@ -10,7 +10,11 @@ import requests
 
 from requests_toolbelt import MultipartEncoder
 
-
+from userge import userge, Message, config, get_collection, pool
+from userge.plugins.misc.download import url_download, tg_download
+from userge.utils import humanbytes, time_formatter, is_url
+from userge.utils.exceptions import ProcessCanceled
+from .. import uptobox
 
 def _convert_size(bytes_size: int)-> str:
     if bytes_size == 0:
@@ -30,11 +34,11 @@ def _countdown(wait_time: int)-> str:
         wait_time -= 1
     return timer
 
-class Uptobox(object):
-    def __init__(self, token: str):
+class Uptobox:
+    def __init__(self):
         self.api_url = "https://uptobox.com/api"
         # Put your token here, find it here: https://uptobox.com/my_account
-        self.token = token
+        self.token = uptobox.UPTOBOX_TOKEN
         self.regex = r"https?:\/\/uptobox\.com\/(?P<code>[a-zA-Z0-9]+)"
         self.headers = {"User-Agent": "Mozilla/5.0 (Windows NT 6.2; WOW64; rv:34.0) Gecko/20100101 Firefox/34.0"}
 
@@ -99,3 +103,59 @@ class Uptobox(object):
         request = requests.post(f"https:{self.get_upload_url()}", data=multi, headers=self.headers).text
         info = json.loads(request)
         return info["files"][0]["url"]
+
+@userge.on_cmd("utbup", about={
+    'header': "Upload files to Uptobox",
+    'usage': "{tr}utbup [file_id | file/folder link]"}, check_downpath=True)
+async def utbup_(message: Message):
+    replied = self._message.reply_to_message
+    is_input_url = is_url(self._message.input_str)
+    dl_loc = ""
+    if replied and replied.media:
+        try:
+            dl_loc, _ = await tg_download(self._message, replied)
+        except ProcessCanceled:
+            await self._message.canceled()
+            return
+        except Exception as e_e:
+            await self._message.err(str(e_e))
+            return
+    elif is_input_url:
+        try:
+            dl_loc, _ = await url_download(self._message, self._message.input_str)
+        except ProcessCanceled:
+            await self._message.canceled()
+            return
+        except Exception as e_e:
+            await self._message.err(str(e_e))
+            return
+    file_path = dl_loc if dl_loc else self._message.input_str
+    if not os.path.exists(file_path):
+        await self._message.err("invalid file path provided?")
+        return
+    if "|" in file_path:
+        file_path, file_name = file_path.split("|")
+        new_path = os.path.join(os.path.dirname(file_path.strip()), file_name.strip())
+        os.rename(file_path.strip(), new_path)
+        file_path = new_path
+    await self._message.try_to_edit("`Loading GDrive Upload...`")
+    pool.submit_thread(self._upload, file_path)
+    start_t = datetime.now()
+    with self._message.cancel_callback(self._cancel):
+        while not self._is_finished:
+            if self._progress is not None:
+                await self._message.edit(self._progress)
+            await asyncio.sleep(config.Dynamic.EDIT_SLEEP_TIMEOUT)
+    if dl_loc and os.path.exists(dl_loc):
+        os.remove(dl_loc)
+    end_t = datetime.now()
+    m_s = (end_t - start_t).seconds
+    if isinstance(self._output, HttpError):
+        out = f"**ERROR** : `{self._output._get_reason()}`"  # pylint: disable=protected-access
+    elif self._output is not None and not self._is_canceled:
+        out = f"**Uploaded Successfully** __in {m_s} seconds__\n\n{self._output}"
+    elif self._output is not None and self._is_canceled:
+        out = self._output
+    else:
+        out = "`failed to upload.. check logs?`"
+    await self._message.edit(out, disable_web_page_preview=True, log=__name__)
