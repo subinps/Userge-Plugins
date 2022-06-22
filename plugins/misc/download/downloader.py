@@ -79,7 +79,6 @@ async def url_download(message: Message, url: str) -> Tuple[str, int]:
         url = url.strip()
         if c_file_name:
             custom_file_name = c_file_name.strip()
-    usern = passw = ''
     parsed = urlparse(url)
     if parsed.username is not None:
         usern = parsed.username
@@ -87,8 +86,9 @@ async def url_download(message: Message, url: str) -> Tuple[str, int]:
         url = parsed._replace(netloc=f"{parsed.hostname}").geturl()
         url = url.strip()
     dl_loc = os.path.join(config.Dynamic.DOWN_PATH, custom_file_name)
-    downloader = SmartDL(url, dl_loc, progress_bar=False, username=usern, password=passw)
-    downloader.add_basic_authentication(usern, passw)
+    downloader = SmartDL(url, dl_loc, progress_bar=False)
+    if parsed.username is not None:
+        downloader.add_basic_authentication(usern.strip(), passw.strip())
     downloader.start(blocking=False)
     with message.cancel_callback(downloader.stop):
         while not downloader.isFinished():
