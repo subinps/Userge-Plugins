@@ -15,7 +15,7 @@ import re
 from datetime import datetime
 from json import dumps
 from typing import Tuple, Union
-from urllib.parse import unquote_plus
+from urllib.parse import unquote_plus, urlparse
 
 from pySmartDL import SmartDL
 from pyrogram.types import Message as PyroMessage
@@ -79,8 +79,14 @@ async def url_download(message: Message, url: str) -> Tuple[str, int]:
         url = url.strip()
         if c_file_name:
             custom_file_name = c_file_name.strip()
+    if "@" in url:
+        parsed = urlparse(url)
+        usern = parsed.username
+        passw = parsed.password
+        url = parsed._replace(netloc=f"{parsed.hostname}").geturl()
     dl_loc = os.path.join(config.Dynamic.DOWN_PATH, custom_file_name)
     downloader = SmartDL(url, dl_loc, progress_bar=False)
+    downloader.add_basic_authentication(usern, passw)
     downloader.start(blocking=False)
     with message.cancel_callback(downloader.stop):
         while not downloader.isFinished():
